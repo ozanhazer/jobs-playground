@@ -29,8 +29,10 @@ class ThrottleExceptionsJob implements ShouldQueue
     public const RECOVERABLE_EXCEPTION = 1;
     public const UNRECOVERABLE_EXCEPTION = 2;
 
-    // This won't have effect as ThrottlesExceptionsWithRedis increases the attempts
-    // and not the maxExceptions.
+    // This won't have effect for the recoverable errors as ThrottlesExceptions increases the attempts
+    // and not the maxExceptions. You can use this for the exceptions that doesn't match
+    // the `ThrottlesExceptions::when()` condition below.
+    // (i.e. Retry unrecoverable errors `$maxExceptions` times, retry recoverable ones `$tries` times.)
     // public $maxExceptions = 2;
 
     public function __construct(public ?int $throwException = null)
@@ -50,6 +52,7 @@ class ThrottleExceptionsJob implements ShouldQueue
             // Allow {maxAttempts} exceptions in {decayMinutes}.
             // Make sure that {maxAttempts} x {backoff} < {decayMinutes}
             (new ThrottlesExceptionsWithRedis(maxAttempts: 3, decayMinutes: 1))
+                // Throttle when the condition matches.
                 ->when(fn ($e) => $e instanceof ThrottleableException && $e->recoverable),
 //                ->backoff(1), // a.k.a retryAfterMinutes. If you want to give some space for the retries.
         ];
@@ -57,7 +60,7 @@ class ThrottleExceptionsJob implements ShouldQueue
 
     public function failed(Throwable $throwable)
     {
-        // This always reports "has been attempted too many times", even for unrecoverable one."
+        // You can always get `MaxAttemptsExceededException` along with the expected exceptions.
         /** @var MaxAttemptsExceededException|ThrottleableException $throwable */
         Log::info('failed method', [
             'className' => get_class($throwable),
