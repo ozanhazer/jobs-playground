@@ -1,19 +1,10 @@
 <?php
 
-use Illuminate\Foundation\Inspiring;
+use App\Jobs\ThrottleExceptionsJob;
 use Illuminate\Support\Facades\Artisan;
 
-/*
-|--------------------------------------------------------------------------
-| Console Routes
-|--------------------------------------------------------------------------
-|
-| This file is where you may define all of your Closure based console
-| commands. Each Closure is bound to a command instance allowing a
-| simple approach to interacting with each command's IO methods.
-|
-*/
-
-Artisan::command('inspire', function () {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
+Artisan::command('dispatch:throttle-exceptions', function () {
+    ThrottleExceptionsJob::dispatch(ThrottleExceptionsJob::RECOVERABLE_EXCEPTION);
+    ThrottleExceptionsJob::dispatch(ThrottleExceptionsJob::UNRECOVERABLE_EXCEPTION);
+    ThrottleExceptionsJob::dispatch();
+})->purpose('Dispatch test jobs for throttle-exceptions');
