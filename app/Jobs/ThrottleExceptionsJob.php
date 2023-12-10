@@ -29,11 +29,24 @@ class ThrottleExceptionsJob implements ShouldQueue
     public const RECOVERABLE_EXCEPTION = 1;
     public const UNRECOVERABLE_EXCEPTION = 2;
 
-    // This won't have effect for the recoverable errors as ThrottlesExceptions increases the attempts
-    // and not the maxExceptions. You can use this for the exceptions that doesn't match
-    // the `ThrottlesExceptions::when()` condition below.
-    // (i.e. Retry unrecoverable errors `$maxExceptions` times, retry recoverable ones `$tries` times.)
+    /*
+     * $maxExceptions won't have effect for the recoverable errors as ThrottlesExceptions increases the attempts
+     * and not the maxExceptions. You can use this for the exceptions that doesn't match
+     * the `ThrottlesExceptions::when()` condition below.
+     * (i.e. Retry unrecoverable errors `$maxExceptions` times, retry recoverable ones `$tries` times.)
+     */
     // public $maxExceptions = 2;
+
+
+    /*
+     * If both $backoff and ThrottlesExceptions::backoff() is set, ThrottlesExceptions' backoff takes precedence
+     * and $backoff is ignored.
+     *
+     * I ThrottlesExceptions::backoff() is ignored and $backoff is set, the job is retried without any delay,
+     * and retried maxAttempts x 2 times in the first second, then in the consequent attempts throttles
+     * as expected. $backoff is ignored!
+     */
+    // public $backoff = 20; // Backoff in seconds. Which one will be used ThrottlesExceptions also has backoff?
 
     public function __construct(public ?int $throwException = null)
     {
@@ -52,9 +65,11 @@ class ThrottleExceptionsJob implements ShouldQueue
             // Allow {maxAttempts} exceptions in {decayMinutes}.
             // Make sure that {maxAttempts} x {backoff} < {decayMinutes}
             (new ThrottlesExceptionsWithRedis(maxAttempts: 3, decayMinutes: 1))
-                // Throttle when the condition matches.
-                ->when(fn ($e) => $e instanceof ThrottleableException && $e->recoverable),
-//                ->backoff(1), // a.k.a retryAfterMinutes. If you want to give some space for the retries.
+                // Throttle when the condition matches. This won't stop retrying if the condition is met,
+                // so the exception should be handled in the handle() method and `$this->fail()` should
+                // be run to mark the job as a failed.
+                ->when(fn ($e) => $e instanceof ThrottleableException && $e->recoverable)
+                ->backoff(1 / 6), // Backoff in minutes. a.k.a retryAfterMinutes. You can set fractions for seconds.
         ];
     }
 
@@ -76,7 +91,7 @@ class ThrottleExceptionsJob implements ShouldQueue
         ]);
 
         if ($this->throwException == self::RECOVERABLE_EXCEPTION) {
-            Log::info('Recoverable exception thrown. Will retry in 1 (backoff) minute...');
+            Log::info('Recoverable exception thrown. Will retry...');
             throw new ThrottleableException(recoverable: true);
         }
 
@@ -85,7 +100,9 @@ class ThrottleExceptionsJob implements ShouldQueue
                 Log::info('Unrecoverable exception thrown. Will fail immediately and won\'t be retried...');
                 throw new ThrottleableException(recoverable: false);
             } catch (ThrottleableException $e) {
-                $this->fail($e); // `fail` call also throws an exception so also throttled. Use together with ThrottlesExceptions::when();
+                // `fail` call also throws an exception, which is also throttled. Use together
+                // with ThrottlesExceptions::when();
+                $this->fail($e);
                 return;
             }
         }
